@@ -1,3 +1,3 @@
-buyclose-backend/config/jwt.php
-buyclose-backend/config/database.php
-buyclose-backend/vendor/
+config/jwt.php
+config/database.php
+vendor/
