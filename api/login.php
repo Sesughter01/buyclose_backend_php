@@ -1,25 +1,32 @@
 <?php
 
-
-require_once "../vendor/autoload.php";
+require_once __DIR__ . "/../vendor/autoload.php";
 
 use Firebase\JWT\JWT;
 
-require_once "../config/database.php";
+require_once __DIR__ . "/../config/database.php";
+require_once __DIR__ . "/../config/jwt.php";
 
 header("Content-Type: application/json");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
     http_response_code(204);
     exit;
 }
 
-require_once "../config/database.php";
+if ($_SERVER["REQUEST_METHOD"] !== "POST") {
+    http_response_code(405);
 
-require_once "../config/jwt.php";
+    echo json_encode([
+        "success" => false,
+        "message" => "Method not allowed"
+    ]);
+
+    exit;
+}
 
 $data = json_decode(
     file_get_contents("php://input"),
@@ -30,6 +37,8 @@ $email = trim($data["email"] ?? "");
 $password = $data["password"] ?? "";
 
 if (empty($email) || empty($password)) {
+    http_response_code(422);
+
     echo json_encode([
         "success" => false,
         "message" => "Email and password are required"
@@ -39,7 +48,7 @@ if (empty($email) || empty($password)) {
 }
 
 $stmt = $pdo->prepare(
-    "SELECT id, full_name, email, password
+    "SELECT id, full_name, email, password, role, status
      FROM users
      WHERE email = ?"
 );
@@ -48,7 +57,9 @@ $stmt->execute([$email]);
 
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$user) {
+if (!$user || !password_verify($password, $user["password"])) {
+    http_response_code(401);
+
     echo json_encode([
         "success" => false,
         "message" => "Invalid email or password"
@@ -57,10 +68,12 @@ if (!$user) {
     exit;
 }
 
-if (!password_verify($password, $user["password"])) {
+if ($user["status"] !== "active") {
+    http_response_code(403);
+
     echo json_encode([
         "success" => false,
-        "message" => "Invalid email or password"
+        "message" => "This account is not active"
     ]);
 
     exit;
@@ -73,9 +86,10 @@ $payload = [
     "iat" => $issuedAt,
     "exp" => $expirationTime,
     "data" => [
-        "id" => $user["id"],
+        "id" => (int) $user["id"],
         "full_name" => $user["full_name"],
-        "email" => $user["email"]
+        "email" => $user["email"],
+        "role" => $user["role"]
     ]
 ];
 
@@ -90,8 +104,10 @@ echo json_encode([
     "message" => "Login successful",
     "token" => $token,
     "user" => [
-        "id" => $user["id"],
+        "id" => (int) $user["id"],
         "full_name" => $user["full_name"],
-        "email" => $user["email"]
+        "email" => $user["email"],
+        "role" => $user["role"],
+        "status" => $user["status"]
     ]
 ]);
